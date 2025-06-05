@@ -6,7 +6,7 @@ log:
   format: "json"
 
 service:
-  name: "wms_service"
+  name: "service"
 
 
 redis:

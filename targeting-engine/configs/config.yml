@@ -1,0 +1,31 @@
+server:
+  port: ":8081"
+
+log:
+  level: "debug"
+  format: "json"
+
+service:
+  name: "wms_service"
+
+
+redis:
+  clusterMode: false
+  hosts: "127.0.0.1:6379"
+  db: 4
+
+postgresql:
+  debugMode: true
+  database: "crud"
+  maxOpenConns: 10
+  maxIdleConns: 2
+  master:
+    host: "127.0.0.1"
+    port: "5433"
+    username: "admin"
+    password: "admin"
+  slaves:
+    hosts: "127.0.0.1"
+    port: "5433"
+    username: "admin"
+    password: "admin"

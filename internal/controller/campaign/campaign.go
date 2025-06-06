@@ -8,7 +8,7 @@ import (
 func (ctrl *Controller) GetAll(ctx *gin.Context) {
 	d, _, err := ctrl.service.GetAll(ctx, map[string]any{})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"code":    http.StatusInternalServerError,
 			"message": err.Error(),
 		})

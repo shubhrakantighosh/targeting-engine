@@ -9,6 +9,6 @@ import (
 	"main/pkg/db/postgres"
 )
 
-func Wire(ctx context.Context, db *postgres.Db) *Repository {
+func Wire(ctx context.Context, db *postgres.DbCluster) *Repository {
 	panic(wire.Build(ProviderSet))
 }

@@ -15,7 +15,7 @@ import (
 
 // Injectors from wire.go:
 
-func Wire(ctx context.Context, db *postgres.Db, redis2 *redis.Client) *Service {
+func Wire(ctx context.Context, db *postgres.DbCluster, redis2 *redis.Client) *Service {
 	repositoryRepository := repository.NewRepository(db)
 	serviceService := NewService(repositoryRepository, redis2)
 	return serviceService

@@ -16,7 +16,7 @@ var (
 	repo     *Repository
 )
 
-func NewRepository(db *postgres.Db) *Repository {
+func NewRepository(db *postgres.DbCluster) *Repository {
 	syncOnce.Do(func() {
 		repo = &Repository{
 			Repository: repository.Repository[model.Campaign]{Db: db},

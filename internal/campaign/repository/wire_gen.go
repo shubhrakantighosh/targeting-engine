@@ -13,7 +13,7 @@ import (
 
 // Injectors from wire.go:
 
-func Wire(ctx context.Context, db *postgres.Db) *Repository {
+func Wire(ctx context.Context, db *postgres.DbCluster) *Repository {
 	repository := NewRepository(db)
 	return repository
 }

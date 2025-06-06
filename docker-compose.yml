@@ -18,10 +18,9 @@ services:
     command: redis-server /etc/redis/redis.conf
     ports:
       - "7005:6379"
-    expose:
-      - "7005"
     volumes:
-      - ./configs/redis.conf:/etc/redis/redis.conf
-      - ./data/redis:/var/lib/redis
+      - ./config/redis.conf:/etc/redis/redis.conf
+      - ./data/redis:/data
+
 
 

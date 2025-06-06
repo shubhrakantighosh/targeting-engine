@@ -1,6 +1,8 @@
 package redis
 
-import "github.com/redis/go-redis/v9"
+import (
+	"github.com/redis/go-redis/v9"
+)
 
 type Redis struct {
 	*redis.Client
@@ -15,3 +17,4 @@ func GetClient() *Redis {
 func SetClient(client *redis.Client) {
 	redisInstance = &Redis{client}
 }
+

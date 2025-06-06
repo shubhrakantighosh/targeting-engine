@@ -1,0 +1,25 @@
+server:
+  port: ":8081"
+
+service:
+  name: "targeting-engine"
+
+redis:
+  host: "127.0.0.1:7005"
+  db: 0
+
+postgresql:
+  debugMode: true
+  database: "crud"
+  maxOpenConns: 10
+  maxIdleConns: 2
+  master:
+    host: "127.0.0.1"
+    port: "5433"
+    username: "admin"
+    password: "admin"
+  slaves:
+    hosts: "127.0.0.1"
+    port: "5433"
+    username: "admin"
+    password: "admin"

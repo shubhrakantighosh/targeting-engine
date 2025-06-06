@@ -16,7 +16,7 @@ func Internal(ctx context.Context, s *gin.Engine) {
 	delivery := g.Group("/delivery")
 	{
 
-		ser := campaignController.Wire(ctx, postgres.GetCluster(), redis.GetClient().Client)
+		ser := campaignController.Wire(ctx, postgres.GetCluster().DbCluster, redis.GetClient().Client)
 
 		delivery.GET("", middlewares.SanitizeQueryParams(), ser.GetAll)
 	}

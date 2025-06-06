@@ -10,6 +10,6 @@ import (
 	"main/pkg/db/postgres"
 )
 
-func Wire(ctx context.Context, db *postgres.Db, redis *redis.Client) *Controller {
+func Wire(ctx context.Context, db *postgres.DbCluster, redis *redis.Client) *Controller {
 	panic(wire.Build(ProviderSet))
 }

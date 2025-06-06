@@ -11,5 +11,6 @@ func TrimStrings(strings []string) []string {
 	for _, s := range strings {
 		result = append(result, TrimSpace(s))
 	}
+
 	return result
 }

@@ -5,7 +5,8 @@ import (
 )
 
 type Redis struct {
-	*redis.Client
+	Client     *redis.Client
+	serializer ISerializer
 }
 
 var redisInstance *Redis
@@ -15,6 +16,5 @@ func GetClient() *Redis {
 }
 
 func SetClient(client *redis.Client) {
-	redisInstance = &Redis{client}
+	redisInstance = &Redis{Client: client, serializer: NewMsgpackSerializer()}
 }
-

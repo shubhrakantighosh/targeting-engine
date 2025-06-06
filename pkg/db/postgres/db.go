@@ -44,7 +44,7 @@ func (db *DbCluster) GetSlaveDB(ctx context.Context) *gorm.DB {
 func (db *DbCluster) getSlave(ctx context.Context) *gorm.DB {
 	slavesCount := len(db.slaves)
 	if slavesCount == 0 {
-		return db.master.db.WithContext(ctx)
+		return db.getMaster(ctx)
 	}
 
 	slaveNumber := int(atomic.AddUint64(&db.counter, 1) % uint64(slavesCount))

@@ -1,9 +1,9 @@
-package utils
+package util
 
 import "strings"
 
 func TrimSpace(str string) string {
-	return strings.Trim(str, " ")
+	return strings.TrimSpace(str)
 }
 
 func TrimStrings(strings []string) []string {

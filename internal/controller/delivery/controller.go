@@ -1,7 +1,7 @@
-package campaign
+package delivery
 
 import (
-	"main/internal/campaign/service"
+	"main/internal/delivery/service"
 	"sync"
 )
 
@@ -22,7 +22,4 @@ func NewController(service *service.Service) *Controller {
 	})
 
 	return ctrl
-}
-
-type Interface interface {
 }

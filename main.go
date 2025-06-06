@@ -17,6 +17,7 @@ func main() {
 
 	// TODO seperated http func init
 	app := gin.New()
+
 	router.Internal(ctx, app)
 
 	port := viper.GetString("server.port")

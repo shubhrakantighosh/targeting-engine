@@ -25,6 +25,3 @@ func NewRepository(db *postgres.DbCluster) *Repository {
 
 	return repo
 }
-
-type Interface interface {
-}

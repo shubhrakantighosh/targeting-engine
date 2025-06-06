@@ -46,7 +46,7 @@ func initializeDB() {
 
 	debugMode := config.GetBool("postgresql.debugMode")
 
-	// Master config i.e. - Write endpoint
+	// Master config
 	masterConfig := opostgres.DBConfig{
 		Host:               mysqlWriteServer,
 		Port:               mysqlWritePort,

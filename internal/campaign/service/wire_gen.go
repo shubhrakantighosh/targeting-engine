@@ -8,14 +8,14 @@ package service
 
 import (
 	"context"
-	"github.com/redis/go-redis/v9"
 	"main/internal/campaign/repository"
 	"main/pkg/db/postgres"
+	"main/pkg/redis"
 )
 
 // Injectors from wire.go:
 
-func Wire(ctx context.Context, db *postgres.DbCluster, redis2 *redis.Client) *Service {
+func Wire(ctx context.Context, db *postgres.DbCluster, redis2 *redis.Redis) *Service {
 	repositoryRepository := repository.NewRepository(db)
 	serviceService := NewService(repositoryRepository, redis2)
 	return serviceService

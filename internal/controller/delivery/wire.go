@@ -1,15 +1,15 @@
 //go:build wireinject
 // +build wireinject
 
-package campaign
+package delivery
 
 import (
 	"context"
 	"github.com/google/wire"
-	"github.com/redis/go-redis/v9"
 	"main/pkg/db/postgres"
+	oredis "main/pkg/redis"
 )
 
-func Wire(ctx context.Context, db *postgres.DbCluster, redis *redis.Client) *Controller {
+func Wire(ctx context.Context, db *postgres.DbCluster, redis *oredis.Redis) *Controller {
 	panic(wire.Build(ProviderSet))
 }

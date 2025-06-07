@@ -18,3 +18,14 @@ func GetClient() *Redis {
 func SetClient(client *redis.Client) {
 	redisInstance = &Redis{Client: client, serializer: NewMsgpackSerializer()}
 }
+
+type Cmdable interface {
+	redis.Cmdable
+	Close() error
+}
+
+// Client represents a Redis Client Connection
+type Client struct {
+	Nil error
+	Cmdable
+}

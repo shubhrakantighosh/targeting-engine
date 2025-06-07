@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"gorm.io/gorm"
+	"main/constants"
 	"main/internal/model"
 	"main/internal/targeting_rule/repository"
 	"main/pkg/apperror"
 	oredis "main/pkg/redis"
+	"net/http"
 	"sync"
 )
 
@@ -45,4 +47,19 @@ func (s *Service) GetTargetingRules(
 	scopes ...func(db *gorm.DB) *gorm.DB,
 ) (model.TargetingRules, apperror.Error) {
 	return s.repo.GetAll(ctx, filter, scopes...)
+}
+
+func (s *Service) GetDistinctCampaignIDsByFilter(
+	ctx context.Context,
+	filter map[string]interface{},
+	scopes ...func(db *gorm.DB) *gorm.DB,
+) (campaignIDs []uint64, cusErr apperror.Error) {
+	err := s.repo.Db.GetSlaveDB(ctx).Model(&model.TargetingRule{}).Where(filter).Scopes(scopes...).
+		Distinct(constants.CampaignID).Find(&campaignIDs).Error
+	if err != nil {
+		cusErr = apperror.New(err, http.StatusBadRequest)
+		return
+	}
+
+	return
 }

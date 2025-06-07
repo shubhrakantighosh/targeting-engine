@@ -3,9 +3,12 @@ package init
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 	config "github.com/spf13/viper"
 	opostgres "main/pkg/db/postgres"
+	oprometheus "main/pkg/metric/prometheus"
 	oredis "main/pkg/redis"
 	"strings"
 	"time"
@@ -13,7 +16,8 @@ import (
 
 func Initialize(ctx context.Context) {
 	initializeRedis(ctx)
-	initializeDB()
+	initializeDB(ctx)
+	initializeMetrics()
 }
 
 func initializeRedis(ctx context.Context) {
@@ -25,7 +29,7 @@ func initializeRedis(ctx context.Context) {
 	oredis.SetClient(r)
 }
 
-func initializeDB() {
+func initializeDB(ctx context.Context) {
 	maxOpenConnections := config.GetInt("postgresql.maxOpenConns")
 	maxIdleConnections := config.GetInt("postgresql.maxIdleConns")
 
@@ -77,5 +81,14 @@ func initializeDB() {
 
 	db := opostgres.InitializeDBInstance(masterConfig, &slavesConfig)
 	fmt.Println("Initialized Postgres DB client")
+
 	opostgres.SetCluster(db)
+}
+
+func initializeMetrics() {
+	newCounterVec := promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Total number of HTTP requests",
+	}, []string{"app", "method", "status"})
+	oprometheus.SetMetrics(newCounterVec)
 }

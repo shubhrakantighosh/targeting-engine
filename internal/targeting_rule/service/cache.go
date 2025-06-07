@@ -7,11 +7,14 @@ import (
 	"main/constants"
 	"main/internal/model"
 	"main/pkg/apperror"
-	"main/util"
+	"main/pkg/redis"
 	"net/http"
 )
 
-func (s *Service) GetCampaignIDByApp(ctx context.Context, app string) (campaignIDs []uint64, cusErr apperror.Error) {
+func (s *Service) GetCampaignIDByApp(
+	ctx context.Context,
+	app string,
+) (campaignIDs []uint64, cusErr apperror.Error) {
 	campaignIDs = make([]uint64, 0)
 	found, err := s.redis.Get(ctx, cacheKey(app), &campaignIDs)
 	if err != nil {
@@ -30,21 +33,14 @@ func (s *Service) GetCampaignIDByApp(ctx context.Context, app string) (campaignI
 		constants.Value:         app,
 		constants.Include:       true,
 	}
-	// discint only campagnine
-	targetingRules, cusErr := s.GetTargetingRules(ctx, filter)
+	campaignIDs, cusErr = s.GetDistinctCampaignIDsByFilter(ctx, filter)
 	if cusErr.Exists() {
 		return
 	}
 
-	if targetingRules.IsEmpty() {
+	if len(campaignIDs) == 0 {
 		return
 	}
-
-	for _, targetingRule := range targetingRules {
-		campaignIDs = append(campaignIDs, targetingRule.CampaignID)
-	}
-
-	campaignIDs = util.DeduplicateSlice(campaignIDs)
 
 	_, err = s.redis.Set(ctx, cacheKey(app), campaignIDs, constants.OneDay)
 	if err != nil {
@@ -64,91 +60,86 @@ func (s *Service) GetTargetingRuleByDimensionType(
 	os string,
 ) (targetingRules model.TargetingRules, cusErr apperror.Error) {
 	targetingRules = make(model.TargetingRules, 0)
+	notFoundCampaignIDs := make([]uint64, 0)
+	keyMapCampaignID := make(map[string]uint64)
+	idMap := make(map[uint64]bool)
 
+	keyVal := make([]*redis.KVOut, 0)
 	for _, campaignID := range campaignIDs {
-		foundTargetingRules, ruleErr := s.getTargetingRuleByDimensionType(
-			ctx,
-			campaignID,
-			country,
-			os,
-		)
-		if ruleErr.Exists() {
-			cusErr = ruleErr
-			return
+		countryKey := cacheByDimensionTypeKey(campaignID, model.Country, country)
+		osKey := cacheByDimensionTypeKey(campaignID, model.OS, os)
+		keyVal = append(keyVal, &redis.KVOut{
+			Key: countryKey,
+			Val: &model.TargetingRule{},
+		})
+
+		keyVal = append(keyVal, &redis.KVOut{
+			Key: osKey,
+			Val: &model.TargetingRule{},
+		})
+
+		keyMapCampaignID[countryKey] = campaignID
+		keyMapCampaignID[osKey] = campaignID
+		idMap[campaignID] = false
+	}
+
+	err := s.redis.PipedMGet(ctx, keyVal)
+	if err != nil {
+		log.Println(err.Error())
+
+		cusErr = apperror.New(err, http.StatusBadRequest)
+		return
+	}
+
+	for _, kv := range keyVal {
+		val, ok := kv.Val.(*model.TargetingRule)
+		if !kv.OK() || !ok {
+			continue
 		}
 
-		targetingRules = append(targetingRules, foundTargetingRules...)
+		if isFalse, found := idMap[val.CampaignID]; found && !isFalse {
+			idMap[val.CampaignID] = true
+		}
+
+		targetingRules = append(targetingRules, *val)
 	}
 
-	return
-}
+	for campaignID, boolean := range idMap {
+		if !boolean {
+			notFoundCampaignIDs = append(notFoundCampaignIDs, campaignID)
+		}
+	}
 
-func (s *Service) getTargetingRuleByDimensionType(
-	ctx context.Context,
-	campaignID uint64,
-	country,
-	os string,
-) (targetingRules model.TargetingRules, cusErr apperror.Error) {
-	targetingRules = make(model.TargetingRules, 0)
-	notFoundDimensionTypes := make([]model.DimensionType, 0)
-	notFoundValues := make([]string, 0)
-
-	var targetingRule model.TargetingRule
-	key := cacheByDimensionTypeKey(campaignID, model.Country, country)
-	found, err := s.redis.Get(ctx, key, &targetingRule)
-	if err != nil {
-		log.Println(err.Error())
-
-		cusErr = apperror.New(err, http.StatusBadRequest)
+	if len(notFoundCampaignIDs) == 0 {
 		return
-	}
-
-	if found {
-		targetingRules = append(targetingRules, targetingRule)
-	} else {
-		notFoundDimensionTypes = append(notFoundDimensionTypes, model.Country)
-		notFoundValues = append(notFoundValues, country)
-	}
-
-	key = cacheByDimensionTypeKey(campaignID, model.OS, os)
-	found, err = s.redis.Get(ctx, key, &targetingRule)
-	if err != nil {
-		log.Println(err.Error())
-
-		cusErr = apperror.New(err, http.StatusBadRequest)
-		return
-	}
-
-	if found {
-		targetingRules = append(targetingRules, targetingRule)
-	} else {
-		notFoundDimensionTypes = append(notFoundDimensionTypes, model.OS)
-		notFoundValues = append(notFoundValues, os)
 	}
 
 	filter := map[string]any{
-		constants.CampaignID:    campaignID,
-		constants.DimensionType: notFoundDimensionTypes,
-		constants.Value:         notFoundValues,
+		constants.CampaignID:    notFoundCampaignIDs,
+		constants.DimensionType: []string{constants.Country, constants.OS},
+		constants.Value:         []string{country, os},
 		constants.Include:       true,
 	}
-	targetingRule, cusErr = s.GetTargetingRule(ctx, filter)
+	targetingRules, cusErr = s.GetTargetingRules(ctx, filter)
 	if cusErr.Exists() {
 		return
 	}
 
-	for i := 0; i < len(notFoundDimensionTypes); i++ {
-		notFoundDimensionType := notFoundDimensionTypes[i]
-		value := notFoundValues[i]
+	keyMap := make([]redis.KVIn, 0)
+	for _, targetingRule := range targetingRules {
+		key := cacheByDimensionTypeKey(targetingRule.CampaignID, targetingRule.DimensionType, targetingRule.Value)
+		keyMap = append(keyMap, redis.KVIn{
+			Key: key,
+			Val: &targetingRule,
+		})
+	}
 
-		key = cacheByDimensionTypeKey(targetingRule.CampaignID, notFoundDimensionType, value)
-		_, err = s.redis.Set(ctx, key, targetingRule, constants.OneDay)
-		if err != nil {
-			log.Println(err.Error())
+	err = s.redis.PipedMSet(ctx, keyMap, constants.OneDay)
+	if err != nil {
+		log.Println(err.Error())
 
-			cusErr = apperror.New(err, http.StatusBadRequest)
-			return
-		}
+		cusErr = apperror.New(err, http.StatusBadRequest)
+		return
 	}
 
 	return

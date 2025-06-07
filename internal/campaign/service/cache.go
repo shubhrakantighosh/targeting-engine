@@ -7,6 +7,7 @@ import (
 	"main/constants"
 	"main/internal/model"
 	"main/pkg/apperror"
+	"main/pkg/redis"
 	"main/util"
 	"net/http"
 	"strconv"
@@ -20,6 +21,7 @@ func (s *Service) FetchCampaignsByIDs(
 
 	campaigns = make(model.Campaigns, 0)
 	notFoundIDs := make([]uint64, 0)
+	idMap := make(map[uint64]struct{})
 
 	ids = util.DeduplicateSlice(ids)
 	if len(ids) == 0 {
@@ -27,28 +29,44 @@ func (s *Service) FetchCampaignsByIDs(
 		return
 	}
 
+	keyMapValue := make([]*redis.KVOut, 0)
 	for _, id := range ids {
 		key := cacheKey(strconv.FormatUint(id, 10))
+		keyMapValue = append(keyMapValue, &redis.KVOut{
+			Key: key,
+			Val: &model.Campaign{},
+		})
+		idMap[id] = struct{}{}
+	}
 
-		var campaign model.Campaign
-		found, err := s.redis.Get(ctx, key, &campaign)
-		if err != nil {
-			log.Printf("%s Redis MGet error: %v", logTag, err)
+	err := s.redis.PipedMGet(ctx, keyMapValue)
+	if err != nil {
+		log.Println(err)
 
-			cusErr = apperror.New(err, http.StatusBadRequest)
-			return
-		}
+		cusErr = apperror.New(err, http.StatusBadRequest)
+		return
+	}
 
-		if found {
-			campaigns = append(campaigns, campaign)
+	for _, v := range keyMapValue {
+		val, ok := v.Val.(*model.Campaign)
+		if !v.OK() || !ok {
 			continue
 		}
 
-		notFoundIDs = append(notFoundIDs, id)
+		campaign := *val
+		if _, ok = idMap[campaign.ID]; ok {
+			delete(idMap, campaign.ID)
+		}
+
+		campaigns = append(campaigns, campaign)
 	}
 
-	if len(notFoundIDs) == 0 {
+	if len(idMap) == 0 {
 		return
+	}
+
+	for id, _ := range idMap {
+		notFoundIDs = append(notFoundIDs, id)
 	}
 
 	missedCampaigns, cusErr := s.fetchAndCacheCampaigns(ctx, notFoundIDs)
@@ -81,16 +99,20 @@ func (s *Service) fetchAndCacheCampaigns(
 		return
 	}
 
+	keyMapValue := make([]redis.KVIn, 0)
 	for _, campaign := range campaigns {
 		key := cacheKey(strconv.FormatUint(campaign.ID, 10))
+		keyMapValue = append(keyMapValue, redis.KVIn{
+			Key: key,
+			Val: &campaign,
+		})
+	}
 
-		if _, err := s.redis.Set(ctx, key, campaign, constants.OneDay); err != nil {
-			log.Printf("%s Redis MSet error: %v", logTag, err)
+	if err := s.redis.PipedMSet(ctx, keyMapValue, constants.OneDay); err != nil {
+		log.Printf("%s Redis MSet error: %v", logTag, err)
 
-			cusErr = apperror.New(err, http.StatusBadRequest)
-			return
-		}
-
+		cusErr = apperror.New(err, http.StatusBadRequest)
+		return
 	}
 
 	return

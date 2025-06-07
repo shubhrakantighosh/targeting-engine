@@ -20,6 +20,12 @@ type Interface interface {
 		scopes ...func(db *gorm.DB) *gorm.DB,
 	) (model.TargetingRules, apperror.Error)
 
+	GetDistinctCampaignIDsByFilter(
+		ctx context.Context,
+		filter map[string]interface{},
+		scopes ...func(db *gorm.DB) *gorm.DB,
+	) (campaignIDs []uint64, cusErr apperror.Error)
+
 	GetCampaignIDByApp(ctx context.Context, app string) (campaignIDs []uint64, cusErr apperror.Error)
 
 	GetTargetingRuleByDimensionType(

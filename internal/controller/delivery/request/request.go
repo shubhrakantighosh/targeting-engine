@@ -2,7 +2,7 @@ package request
 
 import (
 	"main/constants"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 	"net/http"
 	"net/url"
 )
@@ -13,30 +13,30 @@ type DeliveryRequestParams struct {
 	OS      string `form:"os" binding:"required"`
 }
 
-func (q DeliveryRequestParams) Validate() (err errors.Error) {
+func (q DeliveryRequestParams) Validate() (err apperror.Error) {
 	if len(q.App) == 0 {
-		err = errors.NewErrorMsg("app parameter is required", http.StatusBadRequest)
+		err = apperror.NewWithMessage("app parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	if len(q.Country) == 0 {
-		err = errors.NewErrorMsg("country parameter is required", http.StatusBadRequest)
+		err = apperror.NewWithMessage("country parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	if len(q.OS) == 0 {
-		err = errors.NewErrorMsg("os parameter is required", http.StatusBadRequest)
+		err = apperror.NewWithMessage("os parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	return
 }
 
-func (q DeliveryRequestParams) ToQueryPrams() (queryParams url.Values, err errors.Error) {
+func (q DeliveryRequestParams) ToQueryPrams() (queryParams url.Values, err apperror.Error) {
 	queryParams = make(url.Values)
 
 	if len(q.App) == 0 {
-		err = errors.NewErrorMsg("app parameter is required", http.StatusBadRequest)
+		err = apperror.NewWithMessage("app parameter is required", http.StatusBadRequest)
 		return
 	}
 	queryParams.Add(constants.App, q.App)

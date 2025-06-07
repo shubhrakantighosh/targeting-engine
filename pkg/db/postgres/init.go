@@ -61,6 +61,7 @@ func initDbConnection(config DBConfig) *Connection {
 	sqlDB.SetMaxIdleConns(config.MaxIdleConnections)
 	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime)
 
+	// Refactor this logic using exponential backoff
 	retries := 3
 	for retries > 0 {
 		err = sqlDB.Ping()

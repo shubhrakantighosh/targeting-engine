@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 	"main/internal/model"
 	"main/internal/targeting_rule/repository"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 	oredis "main/pkg/redis"
 	"sync"
 )
@@ -35,7 +35,7 @@ func (s *Service) GetTargetingRule(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,
-) (model.TargetingRule, errors.Error) {
+) (model.TargetingRule, apperror.Error) {
 	return s.repo.Get(ctx, filter, scopes...)
 }
 
@@ -43,6 +43,6 @@ func (s *Service) GetTargetingRules(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,
-) (model.TargetingRules, errors.Error) {
+) (model.TargetingRules, apperror.Error) {
 	return s.repo.GetAll(ctx, filter, scopes...)
 }

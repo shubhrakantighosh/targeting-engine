@@ -1,5 +1,7 @@
 package constants
 
+import "time"
+
 const (
 	RequestID           = "request_id"
 	Env                 = "env"
@@ -16,4 +18,5 @@ const (
 	Include             = "include"
 	Exclude             = "exclude"
 	Status              = "status"
+	OneDay              = time.Hour * 24
 )

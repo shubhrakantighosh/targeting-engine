@@ -8,12 +8,6 @@ import (
 	"time"
 )
 
-type Cache interface {
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) (done bool, err error)
-	Get(ctx context.Context, key string, out interface{}) (found bool, err error)
-	Unlink(ctx context.Context, keys []string) (int64, error)
-}
-
 func (r *Redis) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) (done bool, err error) {
 	data, err := r.serializer.Marshal(value)
 	if err != nil {
@@ -59,5 +53,33 @@ func (r *Redis) Unlink(ctx context.Context, keys []string) (int64, error) {
 		log.Printf("[Cache] Failed to unlink keys %v: %v\n", keys, err)
 		return 0, err
 	}
+
 	return result.Val(), nil
+}
+
+func (r *Redis) MSet(ctx context.Context, keyValue map[string]any) error {
+	values := make([]any, 0)
+	for k, v := range keyValue {
+		b, err := r.serializer.Marshal(v)
+		if err != nil {
+			log.Printf("[Cache] MSet Serialise Cache key %v failed. err: %s", v, err)
+
+			return err
+		}
+
+		values = append(values, k, string(b))
+	}
+
+	err := r.Client.MSet(ctx, values...).Err()
+	if err != nil {
+		log.Printf("[Cache] MSet Cache keys %v failed. err: %s", values, err)
+
+		return err
+	}
+
+	return nil
+}
+
+func (r *Redis) MGet(ctx context.Context, keys []string) ([]interface{}, error) {
+	return r.Client.MGet(ctx, keys...).Result()
 }

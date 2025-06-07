@@ -4,7 +4,7 @@ import (
 	"context"
 	"gorm.io/gorm"
 	"main/internal/model"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 )
 
 type Interface interface {
@@ -12,11 +12,21 @@ type Interface interface {
 		ctx context.Context,
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,
-	) (model.Campaign, errors.Error)
+	) (model.Campaign, apperror.Error)
 
 	GetCampaigns(
 		ctx context.Context,
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,
-	) (model.Campaigns, errors.Error)
+	) (model.Campaigns, apperror.Error)
+
+	FetchCampaignsByIDs(
+		ctx context.Context,
+		ids []uint64,
+	) (campaigns model.Campaigns, cusErr apperror.Error)
+
+	InvalidCampaignsByIDs(
+		ctx context.Context,
+		ids []uint64,
+	) (cusErr apperror.Error)
 }

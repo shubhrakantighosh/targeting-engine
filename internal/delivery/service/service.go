@@ -2,12 +2,11 @@ package service
 
 import (
 	"context"
-	"main/constants"
 	campaignService "main/internal/campaign/service"
 	"main/internal/controller/delivery/request"
 	"main/internal/model"
 	targetingRuleService "main/internal/targeting_rule/service"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 	"sync"
 )
 
@@ -35,32 +34,39 @@ func NewService(
 	return service
 }
 
+// handle no match for one record ( example : device ios but by mistake input come ioss it will work if the secound will match )
+
 func (s *Service) GetMatchingCampaigns(
 	ctx context.Context,
 	deliveryRequestParams request.DeliveryRequestParams,
-) (campaigns model.Campaigns, cudErr errors.Error) {
-	filter := map[string]any{
-		constants.DimensionType: constants.App,
-		constants.Value:         deliveryRequestParams.App,
-		constants.Include:       true,
-	}
-	targetingRule, cusErr := s.targetingRuleService.GetTargetingRule(ctx, filter)
+) (activeCampaigns model.Campaigns, cusErr apperror.Error) {
+	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDByApp(ctx, deliveryRequestParams.App)
 	if cusErr.Exists() {
 		return
 	}
 
-	if targetingRule.ID == 0 {
+	if len(campaignIDs) == 0 {
 		return
 	}
 
-	filter = map[string]any{
-		constants.CampaignID:    targetingRule.CampaignID,
-		constants.Include:       true,
-		constants.DimensionType: []string{constants.Country, constants.OS},
-		constants.Value:         []string{deliveryRequestParams.Country, deliveryRequestParams.OS},
-	}
-	targetingRules, cusErr := s.targetingRuleService.GetTargetingRules(ctx, filter)
+	campaigns, cusErr := s.campaignService.FetchCampaignsByIDs(ctx, campaignIDs)
 	if cusErr.Exists() {
+		return
+	}
+
+	activeCampaignsIDs := campaigns.GetActiveCampaignIDs()
+	if len(activeCampaignsIDs) == 0 {
+		return
+	}
+
+	targetingRules, ruleErr := s.targetingRuleService.GetTargetingRuleByDimensionType(
+		ctx,
+		activeCampaignsIDs,
+		deliveryRequestParams.Country,
+		deliveryRequestParams.OS,
+	)
+	if ruleErr.Exists() {
+		cusErr = ruleErr
 		return
 	}
 
@@ -68,12 +74,31 @@ func (s *Service) GetMatchingCampaigns(
 		return
 	}
 
-	filter = map[string]any{
-		constants.ID:     targetingRules.GetCampaignIDs(),
-		constants.Status: model.Active,
+	campaignsIDMap := make(map[uint64]struct{})
+	for _, targetingRule := range targetingRules {
+		campaignsIDMap[targetingRule.CampaignID] = struct{}{}
 	}
-	campaigns, cusErr = s.campaignService.GetCampaigns(ctx, filter)
+
+	for _, campaign := range campaigns {
+		if _, ok := campaignsIDMap[campaign.ID]; ok {
+			activeCampaigns = append(activeCampaigns, campaign)
+		}
+	}
+
+	return
+}
+
+func (s *Service) AppExists(
+	ctx context.Context,
+	app string,
+) (isExists bool, cusErr apperror.Error) {
+	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDByApp(ctx, app)
 	if cusErr.Exists() {
+		return
+	}
+
+	if len(campaignIDs) > 0 {
+		isExists = true
 		return
 	}
 

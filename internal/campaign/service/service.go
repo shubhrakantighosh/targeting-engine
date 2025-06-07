@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 	"main/internal/campaign/repository"
 	"main/internal/model"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 	oredis "main/pkg/redis"
 	"sync"
 )
@@ -35,7 +35,7 @@ func (s *Service) GetCampaign(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,
-) (model.Campaign, errors.Error) {
+) (model.Campaign, apperror.Error) {
 	return s.repo.Get(ctx, filter, scopes...)
 }
 
@@ -43,6 +43,6 @@ func (s *Service) GetCampaigns(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,
-) (model.Campaigns, errors.Error) {
+) (model.Campaigns, apperror.Error) {
 	return s.repo.GetAll(ctx, filter, scopes...)
 }

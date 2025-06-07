@@ -14,6 +14,10 @@ const (
 	OS      DimensionType = "os"
 )
 
+func (d DimensionType) String() string {
+	return string(d)
+}
+
 type TargetingRule struct {
 	ID            uint64         `json:"id"`
 	CampaignID    uint64         `json:"campaign_id"`

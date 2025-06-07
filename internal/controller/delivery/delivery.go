@@ -2,15 +2,16 @@ package delivery
 
 import (
 	"github.com/gin-gonic/gin"
+	"main/internal/controller/delivery/adapter"
 	"main/internal/controller/delivery/request"
-	"main/pkg/errors"
+	"main/pkg/apperror"
 	"net/http"
 )
 
 func (ctrl *Controller) GetMatchingCampaigns(ctx *gin.Context) {
 	var deliveryRequestParams request.DeliveryRequestParams
 	if err := ctx.ShouldBindQuery(&deliveryRequestParams); err != nil {
-		errors.New(err, http.StatusBadRequest).AbortWithError(ctx)
+		apperror.New(err, http.StatusBadRequest).AbortWithError(ctx)
 		return
 	}
 
@@ -30,6 +31,6 @@ func (ctrl *Controller) GetMatchingCampaigns(ctx *gin.Context) {
 		return
 	}
 
-	ctx.AbortWithStatusJSON(http.StatusOK, campaigns)
+	ctx.AbortWithStatusJSON(http.StatusOK, adapter.TransformCampaignsForController(campaigns))
 	return
 }

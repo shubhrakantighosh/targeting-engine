@@ -22,11 +22,11 @@ type Interface interface {
 
 	FetchCampaignsByIDs(
 		ctx context.Context,
-		ids []uint64,
+		campaignIDs []uint64,
 	) (campaigns model.Campaigns, cusErr apperror.Error)
 
-	InvalidCampaignsByIDs(
+	InvalidateCampaignCache(
 		ctx context.Context,
-		ids []uint64,
+		campaignIDs []uint64,
 	) (cusErr apperror.Error)
 }

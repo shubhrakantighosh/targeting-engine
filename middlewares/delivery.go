@@ -34,7 +34,7 @@ func (v *DeliveryValidator) ValidateApp() gin.HandlerFunc {
 			return
 		}
 
-		found, cusErr := v.AppExists(ctx, app)
+		found, cusErr := v.IsAppTargeted(ctx, app)
 		if cusErr.Exists() {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Please try again"})
 			return

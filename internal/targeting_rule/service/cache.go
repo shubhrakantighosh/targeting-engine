@@ -8,17 +8,20 @@ import (
 	"main/internal/model"
 	"main/pkg/apperror"
 	"main/pkg/redis"
+	"main/util"
 	"net/http"
 )
 
-func (s *Service) GetCampaignIDByApp(
+func (s *Service) GetCampaignIDsByApp(
 	ctx context.Context,
-	app string,
+	appID string,
 ) (campaignIDs []uint64, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "GetCampaignIDsByApp")
+
 	campaignIDs = make([]uint64, 0)
-	found, err := s.redis.Get(ctx, cacheKey(app), &campaignIDs)
+	found, err := s.redis.Get(ctx, appCacheKey(appID), &campaignIDs)
 	if err != nil {
-		log.Println(err.Error())
+		log.Println(logTag, "Redis GET error for app:", appID, "-", err)
 
 		cusErr = apperror.New(err, http.StatusBadRequest)
 		return
@@ -28,13 +31,24 @@ func (s *Service) GetCampaignIDByApp(
 		return
 	}
 
+	return s.populateCampaignIDsByApp(ctx, appID)
+}
+
+func (s *Service) populateCampaignIDsByApp(
+	ctx context.Context,
+	appID string,
+) (campaignIDs []uint64, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "populateCampaignIDsByApp")
+
 	filter := map[string]any{
 		constants.DimensionType: model.App,
-		constants.Value:         app,
+		constants.Value:         appID,
 		constants.Include:       true,
 	}
 	campaignIDs, cusErr = s.GetDistinctCampaignIDsByFilter(ctx, filter)
 	if cusErr.Exists() {
+		log.Println(logTag, "Failed to fetch campaign IDs from DB for filter:", filter, "-", cusErr)
+
 		return
 	}
 
@@ -42,9 +56,8 @@ func (s *Service) GetCampaignIDByApp(
 		return
 	}
 
-	_, err = s.redis.Set(ctx, cacheKey(app), campaignIDs, constants.OneDay)
-	if err != nil {
-		log.Println(err.Error())
+	if _, err := s.redis.Set(ctx, appCacheKey(appID), campaignIDs, constants.OneDay); err != nil {
+		log.Println(logTag, "Failed to cache campaign IDs for app:", appID, "-", err)
 
 		cusErr = apperror.New(err, http.StatusBadRequest)
 		return
@@ -53,102 +66,116 @@ func (s *Service) GetCampaignIDByApp(
 	return
 }
 
-func (s *Service) GetTargetingRuleByDimensionType(
+func (s *Service) GetTargetingRulesByCampaigns(
 	ctx context.Context,
 	campaignIDs []uint64,
-	country,
-	os string,
-) (targetingRules model.TargetingRules, cusErr apperror.Error) {
-	targetingRules = make(model.TargetingRules, 0)
-	notFoundCampaignIDs := make([]uint64, 0)
-	keyMapCampaignID := make(map[string]uint64)
-	idMap := make(map[uint64]bool)
+	country, os string,
+) (rules model.TargetingRules, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "GetTargetingRulesByCampaigns")
 
-	keyVal := make([]*redis.KVOut, 0)
-	for _, campaignID := range campaignIDs {
-		countryKey := cacheByDimensionTypeKey(campaignID, model.Country, country)
-		osKey := cacheByDimensionTypeKey(campaignID, model.OS, os)
-		keyVal = append(keyVal, &redis.KVOut{
-			Key: countryKey,
-			Val: &model.TargetingRule{},
-		})
+	rules = make(model.TargetingRules, 0)
+	cacheMissCampaigns := make([]uint64, 0)
+	cacheKeys := make([]*redis.KVOut, 0)
+	campaignKeyMap := make(map[string]uint64)
+	campaignMatchMap := make(map[uint64]bool)
 
-		keyVal = append(keyVal, &redis.KVOut{
-			Key: osKey,
-			Val: &model.TargetingRule{},
-		})
+	for _, id := range campaignIDs {
+		campaignMatchMap[id] = false
 
-		keyMapCampaignID[countryKey] = campaignID
-		keyMapCampaignID[osKey] = campaignID
-		idMap[campaignID] = false
+		for _, dimension := range []model.DimensionType{model.Country, model.OS} {
+			value := country
+			if dimension == model.OS {
+				value = os
+			}
+			key := targetingRuleCacheKey(id, dimension, value)
+			cacheKeys = append(cacheKeys, &redis.KVOut{Key: key, Val: &model.TargetingRule{}})
+			campaignKeyMap[key] = id
+		}
 	}
 
-	err := s.redis.PipedMGet(ctx, keyVal)
-	if err != nil {
-		log.Println(err.Error())
+	if err := s.redis.PipedMGet(ctx, cacheKeys); err != nil {
+		log.Println(logTag, "Redis PipedMGet error:", err)
 
 		cusErr = apperror.New(err, http.StatusBadRequest)
 		return
 	}
 
-	for _, kv := range keyVal {
+	for _, kv := range cacheKeys {
 		val, ok := kv.Val.(*model.TargetingRule)
 		if !kv.OK() || !ok {
 			continue
 		}
 
-		if isFalse, found := idMap[val.CampaignID]; found && !isFalse {
-			idMap[val.CampaignID] = true
-		}
-
-		targetingRules = append(targetingRules, *val)
+		campaignID := val.CampaignID
+		campaignMatchMap[campaignID] = true
+		rules = append(rules, *val)
 	}
 
-	for campaignID, boolean := range idMap {
-		if !boolean {
-			notFoundCampaignIDs = append(notFoundCampaignIDs, campaignID)
+	for id, found := range campaignMatchMap {
+		if !found {
+			cacheMissCampaigns = append(cacheMissCampaigns, id)
 		}
 	}
 
-	if len(notFoundCampaignIDs) == 0 {
+	if len(cacheMissCampaigns) == 0 {
 		return
 	}
 
+	dbRules, cusErr := s.populateTargetingRulesByCampaigns(ctx, cacheMissCampaigns, country, os)
+	if cusErr.Exists() {
+		log.Println(logTag, "DB fetch error for missing targeting rules:", cusErr)
+
+		return
+	}
+
+	rules = append(rules, dbRules...)
+	return
+}
+
+func (s *Service) populateTargetingRulesByCampaigns(
+	ctx context.Context,
+	campaignIDs []uint64,
+	country, os string,
+) (rules model.TargetingRules, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "populateTargetingRulesByCampaigns")
+
+	rules = make(model.TargetingRules, 0)
+
 	filter := map[string]any{
-		constants.CampaignID:    notFoundCampaignIDs,
+		constants.CampaignID:    campaignIDs,
 		constants.DimensionType: []string{constants.Country, constants.OS},
 		constants.Value:         []string{country, os},
 		constants.Include:       true,
 	}
-	targetingRules, cusErr = s.GetTargetingRules(ctx, filter)
+
+	rules, cusErr = s.GetTargetingRules(ctx, filter)
 	if cusErr.Exists() {
+		log.Println(logTag, "DB fetch error:", cusErr, "Filter:", filter)
+
 		return
 	}
 
-	keyMap := make([]redis.KVIn, 0)
-	for _, targetingRule := range targetingRules {
-		key := cacheByDimensionTypeKey(targetingRule.CampaignID, targetingRule.DimensionType, targetingRule.Value)
-		keyMap = append(keyMap, redis.KVIn{
-			Key: key,
-			Val: &targetingRule,
-		})
+	if rules.IsEmpty() {
+		return rules, apperror.Error{}
 	}
 
-	err = s.redis.PipedMSet(ctx, keyMap, constants.OneDay)
-	if err != nil {
-		log.Println(err.Error())
+	keyMap := make([]redis.KVIn, 0, len(rules))
+	for _, rule := range rules {
+		key := targetingRuleCacheKey(rule.CampaignID, rule.DimensionType, rule.Value)
+		keyMap = append(keyMap, redis.KVIn{Key: key, Val: &rule})
+	}
 
-		cusErr = apperror.New(err, http.StatusBadRequest)
-		return
+	if err := s.redis.PipedMSet(ctx, keyMap, constants.OneDay); err != nil {
+		log.Println(logTag, "Redis MSet error while caching rules:", err)
 	}
 
 	return
 }
 
-func cacheByDimensionTypeKey(campaignID uint64, dimensionType model.DimensionType, value string) string {
-	return fmt.Sprintf("targeting_rule_%d_%s_%s", campaignID, dimensionType.String(), value)
+func appCacheKey(appID string) string {
+	return fmt.Sprintf("targeting_rule_app_%s", appID)
 }
 
-func cacheKey(str string) string {
-	return fmt.Sprintf("targeting_rule_app_%s", str)
+func targetingRuleCacheKey(campaignID uint64, dimension model.DimensionType, value string) string {
+	return fmt.Sprintf("targeting_rule_%d_%s_%s", campaignID, dimension.String(), value)
 }

@@ -22,7 +22,7 @@ func (ctrl *Controller) GetMatchingCampaigns(ctx *gin.Context) {
 
 	campaigns, cusErr := ctrl.service.GetMatchingCampaigns(ctx, deliveryRequestParams)
 	if cusErr.Exists() {
-		cusErr.AbortWithError(ctx)
+		apperror.NewWithMessage("Something went wrong", http.StatusBadRequest).AbortWithError(ctx)
 		return
 	}
 

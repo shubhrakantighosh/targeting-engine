@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"log"
 	campaignService "main/internal/campaign/service"
 	"main/internal/controller/delivery/request"
 	"main/internal/model"
 	targetingRuleService "main/internal/targeting_rule/service"
 	"main/pkg/apperror"
+	"main/util"
 	"sync"
 )
 
@@ -34,73 +36,102 @@ func NewService(
 	return service
 }
 
-// handle no match for one record ( example : device ios but by mistake input come ioss it will work if the secound will match )
-
 func (s *Service) GetMatchingCampaigns(
 	ctx context.Context,
-	deliveryRequestParams request.DeliveryRequestParams,
-) (activeCampaigns model.Campaigns, cusErr apperror.Error) {
-	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDByApp(ctx, deliveryRequestParams.App)
+	params request.DeliveryRequestParams,
+) (matchingCampaigns model.Campaigns, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "GetMatchingCampaigns")
+
+	matchingCampaigns = make(model.Campaigns, 0)
+	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDsByApp(ctx, params.App)
 	if cusErr.Exists() {
+		log.Println(logTag, "Failed to get campaign IDs for app:", params.App, "-", cusErr)
 		return
 	}
 
 	if len(campaignIDs) == 0 {
+		log.Println(logTag, "No campaigns targeting app:", params.App)
 		return
 	}
 
-	campaigns, cusErr := s.campaignService.FetchCampaignsByIDs(ctx, campaignIDs)
-	if cusErr.Exists() {
-		return
-	}
-
-	activeCampaignsIDs := campaigns.GetActiveCampaignIDs()
-	if len(activeCampaignsIDs) == 0 {
-		return
-	}
-
-	targetingRules, ruleErr := s.targetingRuleService.GetTargetingRuleByDimensionType(
+	targetingRules, cusErr := s.targetingRuleService.GetTargetingRulesByCampaigns(
 		ctx,
-		activeCampaignsIDs,
-		deliveryRequestParams.Country,
-		deliveryRequestParams.OS,
+		campaignIDs,
+		params.Country,
+		params.OS,
 	)
-	if ruleErr.Exists() {
-		cusErr = ruleErr
+	if cusErr.Exists() {
+		log.Println(logTag, "Failed to fetch targeting rules:", cusErr)
 		return
 	}
 
 	if targetingRules.IsEmpty() {
+		log.Println(logTag, "No targeting rules found for app:", params.App)
 		return
 	}
 
-	campaignsIDMap := make(map[uint64]struct{})
-	for _, targetingRule := range targetingRules {
-		campaignsIDMap[targetingRule.CampaignID] = struct{}{}
+	matchingCampaigns, cusErr = s.filterMatchingCampaigns(ctx, params, campaignIDs, targetingRules)
+	if cusErr.Exists() {
+		log.Println(logTag, "Rule matching failed:", cusErr)
+		return
 	}
 
-	for _, campaign := range campaigns {
-		if _, ok := campaignsIDMap[campaign.ID]; ok {
-			activeCampaigns = append(activeCampaigns, campaign)
+	return matchingCampaigns, apperror.Error{}
+}
+
+func (s *Service) filterMatchingCampaigns(
+	ctx context.Context,
+	params request.DeliveryRequestParams,
+	campaignIDs []uint64,
+	targetingRules model.TargetingRules,
+) (model.Campaigns, apperror.Error) {
+	passedIDs := make([]uint64, 0)
+	groupedRules := targetingRules.GroupByCampaignID()
+
+	for _, campaignID := range campaignIDs {
+		rules, ok := groupedRules[campaignID]
+		if !ok || len(rules) < 2 {
+			continue
+		}
+
+		matchCount := 0
+		for _, rule := range rules {
+			switch rule.DimensionType {
+			case model.Country:
+				if rule.Value == params.Country {
+					matchCount++
+				}
+			case model.OS:
+				if rule.Value == params.OS {
+					matchCount++
+				}
+			}
+		}
+
+		if matchCount == 2 {
+			passedIDs = append(passedIDs, campaignID)
 		}
 	}
 
-	return
+	if len(passedIDs) == 0 {
+		return model.Campaigns{}, apperror.Error{}
+	}
+
+	return s.campaignService.FetchCampaignsByIDs(ctx, passedIDs)
 }
 
-func (s *Service) AppExists(
+func (s *Service) IsAppTargeted(
 	ctx context.Context,
-	app string,
+	appID string,
 ) (isExists bool, cusErr apperror.Error) {
-	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDByApp(ctx, app)
+	logTag := util.LogPrefix(ctx, "IsAppTargeted")
+
+	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDsByApp(ctx, appID)
 	if cusErr.Exists() {
+		log.Println(logTag, "Failed to verify app:", appID, "-", cusErr)
+
 		return
 	}
 
-	if len(campaignIDs) > 0 {
-		isExists = true
-		return
-	}
-
-	return
+	return len(campaignIDs) > 0, apperror.Error{}
 }

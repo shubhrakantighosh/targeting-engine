@@ -11,13 +11,13 @@ type Interface[T any] interface {
 		ctx context.Context,
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,
-	) (results []T, err apperror.Error)
+	) (results []*T, err apperror.Error)
 
 	GetAllWithPagination(
 		ctx context.Context,
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,
-	) (results []T, count int64, err apperror.Error)
+	) (results []*T, count int64, err apperror.Error)
 
 	Get(
 		ctx context.Context,

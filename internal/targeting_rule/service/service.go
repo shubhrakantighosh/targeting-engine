@@ -49,6 +49,7 @@ func (s *Service) GetTargetingRules(
 	return s.repo.GetAll(ctx, filter, scopes...)
 }
 
+// only return
 func (s *Service) GetDistinctCampaignIDsByFilter(
 	ctx context.Context,
 	filter map[string]interface{},

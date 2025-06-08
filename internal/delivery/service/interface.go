@@ -13,8 +13,8 @@ type Interface interface {
 		deliveryRequestParams request.DeliveryRequestParams,
 	) (model.Campaigns, apperror.Error)
 
-	AppExists(
+	IsAppTargeted(
 		ctx context.Context,
-		app string,
+		appID string,
 	) (isExists bool, cusErr apperror.Error)
 }

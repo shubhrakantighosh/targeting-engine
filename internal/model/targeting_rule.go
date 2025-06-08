@@ -18,6 +18,10 @@ func (d DimensionType) String() string {
 	return string(d)
 }
 
+func (d DimensionType) Is(dimensionType DimensionType) bool {
+	return d == dimensionType
+}
+
 type TargetingRule struct {
 	ID            uint64         `json:"id"`
 	CampaignID    uint64         `json:"campaign_id"`
@@ -48,4 +52,21 @@ func (tr TargetingRules) GetCampaignIDs() []uint64 {
 	}
 
 	return util.DeduplicateSlice(ids)
+}
+
+func (tr TargetingRules) GroupByCampaignID() (campaignIDMap map[uint64]TargetingRules) {
+	campaignIDMap = make(map[uint64]TargetingRules)
+	if tr.IsEmpty() {
+		return
+	}
+
+	for _, rule := range tr {
+		if _, ok := campaignIDMap[rule.CampaignID]; !ok {
+			campaignIDMap[rule.CampaignID] = make(TargetingRules, 0)
+		}
+
+		campaignIDMap[rule.CampaignID] = append(campaignIDMap[rule.CampaignID], rule)
+	}
+
+	return
 }

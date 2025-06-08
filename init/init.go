@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 	config "github.com/spf13/viper"
+	"main/internal/model"
 	opostgres "main/pkg/db/postgres"
 	oprometheus "main/pkg/metric/prometheus"
 	oredis "main/pkg/redis"
@@ -81,6 +82,9 @@ func initializeDB(ctx context.Context) {
 
 	db := opostgres.InitializeDBInstance(masterConfig, &slavesConfig)
 	fmt.Println("Initialized Postgres DB client")
+
+	db.GetSlaveDB(ctx).AutoMigrate(&model.Campaign{})
+	db.GetSlaveDB(ctx).AutoMigrate(&model.TargetingRule{})
 
 	opostgres.SetCluster(db)
 }

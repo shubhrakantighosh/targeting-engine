@@ -10,106 +10,101 @@ import (
 	"main/pkg/redis"
 	"main/util"
 	"net/http"
-	"strconv"
 )
 
 func (s *Service) FetchCampaignsByIDs(
 	ctx context.Context,
-	ids []uint64,
+	campaignIDs []uint64,
 ) (campaigns model.Campaigns, cusErr apperror.Error) {
 	logTag := util.LogPrefix(ctx, "FetchCampaignsByIDs")
 
-	campaigns = make(model.Campaigns, 0)
-	notFoundIDs := make([]uint64, 0)
-	idMap := make(map[uint64]struct{})
-
-	ids = util.DeduplicateSlice(ids)
-	if len(ids) == 0 {
-		log.Println(logTag, "No IDs provided.")
+	campaignIDs = util.DeduplicateSlice(campaignIDs)
+	if len(campaignIDs) == 0 {
+		log.Println(logTag, "No campaign IDs provided")
 		return
 	}
 
-	keyMapValue := make([]*redis.KVOut, 0)
-	for _, id := range ids {
-		key := cacheKey(strconv.FormatUint(id, 10))
-		keyMapValue = append(keyMapValue, &redis.KVOut{
-			Key: key,
+	campaigns = make(model.Campaigns, 0)
+	cacheMissIDs := make([]uint64, 0)
+	idTracker := make(map[uint64]struct{}, len(campaignIDs))
+
+	kvPairs := make([]*redis.KVOut, 0, len(campaignIDs))
+	for _, id := range campaignIDs {
+		cacheKey := cacheKeyForCampaign(id)
+		kvPairs = append(kvPairs, &redis.KVOut{
+			Key: cacheKey,
 			Val: &model.Campaign{},
 		})
-		idMap[id] = struct{}{}
+		idTracker[id] = struct{}{}
 	}
 
-	err := s.redis.PipedMGet(ctx, keyMapValue)
-	if err != nil {
-		log.Println(err)
+	if err := s.redis.PipedMGet(ctx, kvPairs); err != nil {
+		log.Println(logTag, "Redis PipedMGet failed:", err)
 
 		cusErr = apperror.New(err, http.StatusBadRequest)
 		return
 	}
 
-	for _, v := range keyMapValue {
-		val, ok := v.Val.(*model.Campaign)
-		if !v.OK() || !ok {
+	for _, kv := range kvPairs {
+		campaign, ok := kv.Val.(*model.Campaign)
+		if !kv.OK() || !ok {
 			continue
 		}
-
-		campaign := *val
-		if _, ok = idMap[campaign.ID]; ok {
-			delete(idMap, campaign.ID)
-		}
-
-		campaigns = append(campaigns, campaign)
+		campaigns = append(campaigns, *campaign)
+		delete(idTracker, campaign.ID)
 	}
 
-	if len(idMap) == 0 {
+	if len(idTracker) == 0 {
 		return
 	}
 
-	for id, _ := range idMap {
-		notFoundIDs = append(notFoundIDs, id)
+	for id := range idTracker {
+		cacheMissIDs = append(cacheMissIDs, id)
 	}
 
-	missedCampaigns, cusErr := s.fetchAndCacheCampaigns(ctx, notFoundIDs)
+	missingCampaigns, cusErr := s.fetchAndCacheCampaigns(ctx, cacheMissIDs)
 	if cusErr.Exists() {
-		log.Printf("%s Failed to fetch & cache campaigns: %v", logTag, cusErr)
+		log.Println(logTag, "DB fallback failed:", cusErr)
 		return
 	}
 
-	campaigns = append(campaigns, missedCampaigns...)
+	campaigns = append(campaigns, missingCampaigns...)
 	return
 }
 
 func (s *Service) fetchAndCacheCampaigns(
 	ctx context.Context,
-	ids []uint64,
+	campaignIDs []uint64,
 ) (campaigns model.Campaigns, cusErr apperror.Error) {
 	logTag := util.LogPrefix(ctx, "fetchAndCacheCampaigns")
 
+	campaigns = make(model.Campaigns, 0)
 	filter := map[string]any{
-		constants.ID: ids,
+		constants.ID: campaignIDs,
 	}
+
 	campaigns, cusErr = s.GetCampaigns(ctx, filter)
 	if cusErr.Exists() {
-		log.Printf("%s Failed to get campaigns: %v", logTag, cusErr)
+		log.Println(logTag, "DB fetch failed for campaigns:", cusErr, "Filter:", filter)
+
 		return
 	}
 
 	if campaigns.IsEmpty() {
-		log.Printf("%s No campaigns found for given IDs , filter :%v", logTag, filter)
 		return
 	}
 
-	keyMapValue := make([]redis.KVIn, 0)
+	kvPairs := make([]redis.KVIn, 0, len(campaigns))
 	for _, campaign := range campaigns {
-		key := cacheKey(strconv.FormatUint(campaign.ID, 10))
-		keyMapValue = append(keyMapValue, redis.KVIn{
-			Key: key,
+		cacheKey := cacheKeyForCampaign(campaign.ID)
+		kvPairs = append(kvPairs, redis.KVIn{
+			Key: cacheKey,
 			Val: &campaign,
 		})
 	}
 
-	if err := s.redis.PipedMSet(ctx, keyMapValue, constants.OneDay); err != nil {
-		log.Printf("%s Redis MSet error: %v", logTag, err)
+	if err := s.redis.PipedMSet(ctx, kvPairs, constants.OneDay); err != nil {
+		log.Println(logTag, "Redis PipedMSet failed:", err)
 
 		cusErr = apperror.New(err, http.StatusBadRequest)
 		return
@@ -118,33 +113,31 @@ func (s *Service) fetchAndCacheCampaigns(
 	return
 }
 
-func (s *Service) InvalidCampaignsByIDs(
+func (s *Service) InvalidateCampaignCache(
 	ctx context.Context,
-	ids []uint64,
+	campaignIDs []uint64,
 ) (cusErr apperror.Error) {
-	logTag := util.LogPrefix(ctx, "InvalidCampaignsByIDs")
-	ids = util.DeduplicateSlice(ids)
-	if len(ids) == 0 {
+	logTag := util.LogPrefix(ctx, "InvalidateCampaignCache")
+
+	campaignIDs = util.DeduplicateSlice(campaignIDs)
+	if len(campaignIDs) == 0 {
 		return
 	}
 
-	keys := make([]string, 0)
-	for _, id := range ids {
-		key := cacheKey(strconv.FormatUint(id, 10))
-		keys = append(keys, key)
+	keys := make([]string, 0, len(campaignIDs))
+	for _, id := range campaignIDs {
+		keys = append(keys, cacheKeyForCampaign(id))
 	}
 
-	_, err := s.redis.Unlink(ctx, keys)
-	if err != nil {
-		log.Printf("%s Redis MUnlink error: %v", logTag, err)
+	if _, err := s.redis.Unlink(ctx, keys); err != nil {
+		log.Println(logTag, "Redis Unlink failed:", err)
 
-		cusErr = apperror.New(err, http.StatusBadRequest)
-		return
+		return apperror.New(err, http.StatusBadRequest)
 	}
 
 	return
 }
 
-func cacheKey(str string) string {
-	return fmt.Sprintf("campaigns_id_%s", str)
+func cacheKeyForCampaign(campaignID uint64) string {
+	return fmt.Sprintf("campaigns_id_%d", campaignID)
 }

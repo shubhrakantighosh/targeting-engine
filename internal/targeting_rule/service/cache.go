@@ -74,17 +74,14 @@ func (s *Service) GetTargetingRulesByCampaigns(
 	logTag := util.LogPrefix(ctx, "GetTargetingRulesByCampaigns")
 
 	rules = make(model.TargetingRules, 0)
-	cacheMissCampaigns := make([]uint64, 0)
 	cacheKeys := make([]*redis.KVOut, 0)
 	campaignKeyMap := make(map[string]uint64)
-	campaignMatchMap := make(map[uint64]bool)
+	cacheMissCampaigns := make([]uint64, 0)
 
 	for _, id := range campaignIDs {
-		campaignMatchMap[id] = false
-
 		for _, dimension := range []model.DimensionType{model.Country, model.OS} {
 			value := country
-			if dimension == model.OS {
+			if dimension.Is(model.OS) {
 				value = os
 			}
 			key := targetingRuleCacheKey(id, dimension, value)
@@ -103,20 +100,14 @@ func (s *Service) GetTargetingRulesByCampaigns(
 	for _, kv := range cacheKeys {
 		val, ok := kv.Val.(*model.TargetingRule)
 		if !kv.OK() || !ok {
+			cacheMissCampaigns = append(cacheMissCampaigns, campaignKeyMap[kv.Key])
 			continue
 		}
 
-		campaignID := val.CampaignID
-		campaignMatchMap[campaignID] = true
 		rules = append(rules, *val)
 	}
 
-	for id, found := range campaignMatchMap {
-		if !found {
-			cacheMissCampaigns = append(cacheMissCampaigns, id)
-		}
-	}
-
+	cacheMissCampaigns = util.DeduplicateSlice(cacheMissCampaigns)
 	if len(cacheMissCampaigns) == 0 {
 		return
 	}
@@ -140,17 +131,15 @@ func (s *Service) populateTargetingRulesByCampaigns(
 	logTag := util.LogPrefix(ctx, "populateTargetingRulesByCampaigns")
 
 	rules = make(model.TargetingRules, 0)
-
 	filter := map[string]any{
 		constants.CampaignID:    campaignIDs,
 		constants.DimensionType: []string{constants.Country, constants.OS},
 		constants.Value:         []string{country, os},
 		constants.Include:       true,
 	}
-
 	rules, cusErr = s.GetTargetingRules(ctx, filter)
 	if cusErr.Exists() {
-		log.Println(logTag, "DB fetch error:", cusErr, "Filter:", filter)
+		log.Println(logTag, "DB fetch error:", cusErr, "Filter:", filter, "-", cusErr)
 
 		return
 	}

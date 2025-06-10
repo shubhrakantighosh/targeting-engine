@@ -85,7 +85,7 @@ func (s *Service) filterMatchingCampaigns(
 	campaignIDs []uint64,
 	targetingRules model.TargetingRules,
 ) (model.Campaigns, apperror.Error) {
-	passedIDs := make([]uint64, 0)
+	matchingCampaignIDs := make([]uint64, 0)
 	groupedRules := targetingRules.GroupByCampaignID()
 
 	for _, campaignID := range campaignIDs {
@@ -94,30 +94,32 @@ func (s *Service) filterMatchingCampaigns(
 			continue
 		}
 
-		matchCount := 0
+		hasMatchingCountry := false
+		hasMatchingOS := false
+
 		for _, rule := range rules {
 			switch rule.DimensionType {
 			case model.Country:
-				if rule.Value == params.Country {
-					matchCount++
+				if rule.Value == params.Country && rule.Include {
+					hasMatchingCountry = true
 				}
 			case model.OS:
-				if rule.Value == params.OS {
-					matchCount++
+				if rule.Value == params.OS && rule.Include {
+					hasMatchingOS = true
 				}
 			}
 		}
 
-		if matchCount == 2 {
-			passedIDs = append(passedIDs, campaignID)
+		if hasMatchingCountry && hasMatchingOS {
+			matchingCampaignIDs = append(matchingCampaignIDs, campaignID)
 		}
 	}
 
-	if len(passedIDs) == 0 {
+	if len(matchingCampaignIDs) == 0 {
 		return model.Campaigns{}, apperror.Error{}
 	}
 
-	return s.campaignService.FetchCampaignsByIDs(ctx, passedIDs)
+	return s.campaignService.FetchCampaignsByIDs(ctx, matchingCampaignIDs)
 }
 
 func (s *Service) IsAppTargeted(

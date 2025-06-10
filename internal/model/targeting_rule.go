@@ -60,6 +60,8 @@ func (tr TargetingRules) GroupByCampaignID() (campaignIDMap map[uint64]Targeting
 		return
 	}
 
+	tr = util.DeduplicateSlice(tr)
+
 	for _, rule := range tr {
 		if _, ok := campaignIDMap[rule.CampaignID]; !ok {
 			campaignIDMap[rule.CampaignID] = make(TargetingRules, 0)

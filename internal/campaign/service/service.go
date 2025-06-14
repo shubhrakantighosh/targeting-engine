@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 	"main/internal/campaign/repository"
 	"main/internal/model"
@@ -13,6 +14,7 @@ import (
 type Service struct {
 	repo  repository.Repository
 	redis oredis.Cache
+	singleflight.Group
 }
 
 var (

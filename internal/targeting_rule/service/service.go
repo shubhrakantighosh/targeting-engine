@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 	"main/internal/model"
 	"main/internal/targeting_rule/repository"
@@ -13,6 +14,7 @@ import (
 type Service struct {
 	repo  repository.Repository
 	redis oredis.Cache
+	singleflight.Group
 }
 
 var (
@@ -92,7 +94,7 @@ func BuildHierarchy(dimensions ...model.DimensionType) DimensionHierarchy {
 	return hierarchy
 }
 
-func (tf *TargetingFilter) FilterCampaigns(clientReq ClientRequest) []filterResult {
+func (tf *TargetingFilter) filterCampaigns(clientReq ClientRequest) []filterResult {
 	var (
 		campaignRules = tf.rules.GroupByCampaignID()
 		resultChan    = make(chan filterResult, len(campaignRules))
@@ -125,7 +127,7 @@ func (tf *TargetingFilter) FilterCampaigns(clientReq ClientRequest) []filterResu
 }
 
 func (tf *TargetingFilter) GetMatchingCampaigns(clientReq ClientRequest) []uint64 {
-	results := tf.FilterCampaigns(clientReq)
+	results := tf.filterCampaigns(clientReq)
 	var matchingCampaigns []uint64
 
 	for _, result := range results {
@@ -151,8 +153,8 @@ func (tf *TargetingFilter) matchesCampaign(
 		}
 	}
 
-	for dimType := range model.NonHierarchicalDimensionType {
-		if !dimensionRules[dimType].HasIncludedRuleFor(dimType, clientReq[dimType]) {
+	for dimension := range model.NonHierarchicalDimensionType {
+		if !dimensionRules[dimension].HasIncludedRuleFor(dimension, clientReq[dimension]) {
 			return false
 		}
 	}
@@ -169,7 +171,7 @@ func (tf *TargetingFilter) checkHierarchicalDimensions(
 	dimensionRules map[model.DimensionType]model.TargetingRules,
 	parentChildMap map[uint64]model.TargetingRules,
 ) bool {
-	matchedRules := make(map[model.DimensionType]*model.TargetingRule)
+	matchedRules := make(map[model.DimensionType]uint64)
 
 	for _, dimType := range tf.hierarchy.Dimensions {
 		clientValue := clientReq[dimType] // india
@@ -179,12 +181,12 @@ func (tf *TargetingFilter) checkHierarchicalDimensions(
 		}
 
 		//  parent dimension
-		var parentRule *model.TargetingRule
+		var parentID uint64 = 0
 		if parentDimType, hasParent := tf.hierarchy.ParentMap[dimType]; hasParent {
-			parentRule = matchedRules[parentDimType]
+			parentID = matchedRules[parentDimType]
 		}
 
-		applicableRules := getApplicableRules(rules, parentRule, parentChildMap)
+		applicableRules := getApplicableRules(rules, parentID, parentChildMap)
 
 		if !applicableRules.HasIncludedRuleFor(dimType, clientValue) {
 			return false
@@ -192,7 +194,7 @@ func (tf *TargetingFilter) checkHierarchicalDimensions(
 
 		for _, rule := range applicableRules {
 			if rule.Value == clientValue && rule.Include {
-				matchedRules[dimType] = &rule
+				matchedRules[dimType] = rule.ID
 				break
 			}
 		}
@@ -201,11 +203,13 @@ func (tf *TargetingFilter) checkHierarchicalDimensions(
 	return true
 }
 
-func getApplicableRules(rules model.TargetingRules, parentRule *model.TargetingRule,
-	parentChildMap map[uint64]model.TargetingRules) model.TargetingRules {
-
-	if parentRule != nil {
-		if childRules, exists := parentChildMap[parentRule.ID]; exists && len(childRules) > 0 {
+func getApplicableRules(
+	rules model.TargetingRules,
+	parentID uint64,
+	parentChildMap map[uint64]model.TargetingRules,
+) model.TargetingRules {
+	if parentID > 0 {
+		if childRules, exists := parentChildMap[parentID]; exists && len(childRules) > 0 {
 			return childRules
 		}
 	}

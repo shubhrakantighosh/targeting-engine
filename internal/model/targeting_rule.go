@@ -12,6 +12,8 @@ const (
 	App     DimensionType = "app"
 	Country DimensionType = "country"
 	OS      DimensionType = "os"
+	State   DimensionType = "state"
+	City    DimensionType = "city"
 )
 
 func (d DimensionType) String() string {
@@ -25,6 +27,7 @@ func (d DimensionType) Is(dimensionType DimensionType) bool {
 type TargetingRule struct {
 	ID            uint64         `json:"id"`
 	CampaignID    uint64         `json:"campaign_id"`
+	ParentID      uint64         `json:"parent_id"`      // ref of TargetingRule id for state etc
 	DimensionType DimensionType  `json:"dimension_type"` // "app" "country", "os"
 	Include       bool           `json:"include"`        // true = include, false = exclude
 	Value         string         `json:"value"`          // actual value, e.g., "android", "us"
@@ -36,6 +39,12 @@ type TargetingRule struct {
 }
 
 type TargetingRules []TargetingRule
+
+var NonHierarchicalDimensionType = map[DimensionType]struct{}{
+	App:     {},
+	OS:      {},
+	Country: {},
+}
 
 func (tr TargetingRules) IsEmpty() bool {
 	return tr == nil || len(tr) == 0
@@ -60,8 +69,6 @@ func (tr TargetingRules) GroupByCampaignID() (campaignIDMap map[uint64]Targeting
 		return
 	}
 
-	tr = util.DeduplicateSlice(tr)
-
 	for _, rule := range tr {
 		if _, ok := campaignIDMap[rule.CampaignID]; !ok {
 			campaignIDMap[rule.CampaignID] = make(TargetingRules, 0)
@@ -71,4 +78,18 @@ func (tr TargetingRules) GroupByCampaignID() (campaignIDMap map[uint64]Targeting
 	}
 
 	return
+}
+
+func (tr TargetingRules) HasIncludedRuleFor(dimensionType DimensionType, value string) bool {
+	if tr.IsEmpty() {
+		return false
+	}
+
+	for _, rule := range tr {
+		if rule.Include && rule.DimensionType.Is(dimensionType) && rule.Value == value {
+			return true
+		}
+	}
+
+	return false
 }

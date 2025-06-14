@@ -57,8 +57,6 @@ func (s *Service) GetMatchingCampaigns(
 	targetingRules, cusErr := s.targetingRuleService.GetTargetingRulesByCampaigns(
 		ctx,
 		campaignIDs,
-		params.Country,
-		params.OS,
 	)
 	if cusErr.Exists() {
 		log.Println(logTag, "Failed to fetch targeting rules:", cusErr)
@@ -70,56 +68,24 @@ func (s *Service) GetMatchingCampaigns(
 		return
 	}
 
-	matchingCampaigns, cusErr = s.filterMatchingCampaigns(ctx, params, campaignIDs, targetingRules)
-	if cusErr.Exists() {
-		log.Println(logTag, "Rule matching failed:", cusErr)
-		return
-	}
-
-	return matchingCampaigns, apperror.Error{}
+	return s.filterMatchingCampaign(ctx, params, targetingRules)
 }
 
-func (s *Service) filterMatchingCampaigns(
+func (s *Service) filterMatchingCampaign(
 	ctx context.Context,
 	params request.DeliveryRequestParams,
-	campaignIDs []uint64,
-	targetingRules model.TargetingRules,
+	rules model.TargetingRules,
 ) (model.Campaigns, apperror.Error) {
-	matchingCampaignIDs := make([]uint64, 0)
-	groupedRules := targetingRules.GroupByCampaignID()
+	hierarchy := targetingRuleService.BuildHierarchy(params.ToBuildHierarchy()...)
 
-	for _, campaignID := range campaignIDs {
-		rules, ok := groupedRules[campaignID]
-		if !ok || len(rules) < 2 {
-			continue
-		}
+	filter := targetingRuleService.NewTargetingFilter(rules, hierarchy)
 
-		hasMatchingCountry := false
-		hasMatchingOS := false
-
-		for _, rule := range rules {
-			switch rule.DimensionType {
-			case model.Country:
-				if rule.Value == params.Country && rule.Include {
-					hasMatchingCountry = true
-				}
-			case model.OS:
-				if rule.Value == params.OS && rule.Include {
-					hasMatchingOS = true
-				}
-			}
-		}
-
-		if hasMatchingCountry && hasMatchingOS {
-			matchingCampaignIDs = append(matchingCampaignIDs, campaignID)
-		}
+	matchedCampaignIDs := filter.GetMatchingCampaigns(params.DimensionTypeMapValue())
+	if len(matchedCampaignIDs) == 0 {
+		return nil, apperror.Error{}
 	}
 
-	if len(matchingCampaignIDs) == 0 {
-		return model.Campaigns{}, apperror.Error{}
-	}
-
-	return s.campaignService.FetchCampaignsByIDs(ctx, matchingCampaignIDs)
+	return s.campaignService.FetchCampaignsByIDs(ctx, matchedCampaignIDs)
 }
 
 func (s *Service) IsAppTargeted(

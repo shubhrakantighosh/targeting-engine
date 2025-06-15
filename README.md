@@ -15,7 +15,7 @@ A high-performance, horizontally scalable microservice built in Go that delivers
   - Input sanitization
   - Request validation
   - Prometheus instrumentation
-- 🧪 Load tested using `wrk` — 4K+ RPS sustained
+- 🧪 Load tested — sustained 2500+ RPS with concurrency
 
 ---
 
@@ -38,10 +38,11 @@ type Campaign struct {
 
 ```go
 type TargetingRule struct {
-    CampaignID    uint64
-    DimensionType string // "app", "country", "os"
-    Include       bool   // true = include, false = exclude
-    Value         string
+    CampaignID    uint64 // ID of the campaign this rule belongs to
+    DimensionType string // e.g., "app", "country", "os", "state", "city"
+    Include       bool   // true = include the value, false = exclude
+    Value         string // the value to match for the dimension
+    ParentID      uint64 // ID of the parent rule (used for hierarchical dimensions like state -> country)
 }
 ```
 
@@ -97,15 +98,15 @@ type TargetingRule struct {
 ```bash
 Command:
 wrk -t12 -c400 -d300s \
-"http://host.docker.internal:8081/internal/api/v1/delivery?app=com.ludo.king&country=us&os=android"
+"http://host.docker.internal:8081/internal/api/v1/delivery?app=dream11.com&country=india&os=android&state=haryana&city=gurgaon"
 
 Results:
-- Total requests:      1,260,045
-- Requests/second:     ~4216
-- Avg latency:         ~94 ms
-- Timeouts:            3446
+- Total requests:      764,412
+- Requests/second:     ~2550
+- Avg latency:         ~156 ms
+- Timeouts:            0
 - Errors:              0 (connect/read/write)
-- Data transferred:    ~247 MB
+- Data transferred:    ~184.44 MB
 ```
 
 > 💡 This system demonstrated excellent stability at high concurrency.

@@ -5,8 +5,9 @@ service:
   name: "targeting-engine"
 
 redis:
-  host: "127.0.0.1:7005"
-  db: 0
+  host     : "127.0.0.1:7005"
+  db       : 0
+  poolSize : 1000
 
 postgresql:
   debugMode: true
@@ -23,3 +24,7 @@ postgresql:
     port: "5433"
     username: "admin"
     password: "admin"
+
+cache:
+  defaultExpiration: "5m"
+  cleanupInterval: "10m"

@@ -35,4 +35,9 @@ type Interface interface {
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,
 	) (campaignIDs []uint64, cusErr apperror.Error)
+
+	FilterMatchingCampaigns(
+		ctx context.Context,
+		clientRequest ClientRequest,
+	) ([]uint64, apperror.Error)
 }

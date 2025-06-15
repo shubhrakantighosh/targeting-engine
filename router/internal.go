@@ -20,7 +20,8 @@ func Internal(ctx context.Context, s *gin.Engine) {
 
 		deliveryCtrl := deliveryController.Wire(ctx, postgres.GetCluster().DbCluster, redis.GetClient())
 		deliveryRoute.GET("",
-			middlewares.SanitizeQueryParams(), middlewares.MetricsMiddleware(), deliveryValidator.ValidateApp(),
+			middlewares.SanitizeQueryParams(), middlewares.MetricsMiddleware(),
+			deliveryValidator.ValidateApp(), middlewares.TargetingCacheMiddleware(),
 			deliveryCtrl.GetMatchingCampaigns,
 		)
 	}

@@ -40,49 +40,12 @@ func (s *Service) GetMatchingCampaigns(
 	ctx context.Context,
 	params request.DeliveryRequestParams,
 ) (matchingCampaigns model.Campaigns, cusErr apperror.Error) {
-	logTag := util.LogPrefix(ctx, "GetMatchingCampaigns")
-
-	matchingCampaigns = make(model.Campaigns, 0)
-	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDsByApp(ctx, params.App)
-	if cusErr.Exists() {
-		log.Println(logTag, "Failed to get campaign IDs for app:", params.App, "-", cusErr)
-		return
-	}
-
-	if len(campaignIDs) == 0 {
-		log.Println(logTag, "No campaigns targeting app:", params.App)
-		return
-	}
-
-	targetingRules, cusErr := s.targetingRuleService.GetTargetingRulesByCampaigns(
+	matchedCampaignIDs, cusErr := s.targetingRuleService.FilterMatchingCampaigns(
 		ctx,
-		campaignIDs,
+		params.DimensionTypeMapValue(),
 	)
-	if cusErr.Exists() {
-		log.Println(logTag, "Failed to fetch targeting rules:", cusErr)
-		return
-	}
-
-	if targetingRules.IsEmpty() {
-		log.Println(logTag, "No targeting rules found for app:", params.App)
-		return
-	}
-
-	return s.filterMatchingCampaign(ctx, params, targetingRules)
-}
-
-func (s *Service) filterMatchingCampaign(
-	ctx context.Context,
-	params request.DeliveryRequestParams,
-	rules model.TargetingRules,
-) (model.Campaigns, apperror.Error) {
-	hierarchy := targetingRuleService.BuildHierarchy(params.ToBuildHierarchy()...)
-
-	filter := targetingRuleService.NewTargetingFilter(rules, hierarchy)
-
-	matchedCampaignIDs := filter.GetMatchingCampaigns(params.DimensionTypeMapValue())
-	if len(matchedCampaignIDs) == 0 {
-		return nil, apperror.Error{}
+	if cusErr.Exists() || len(matchedCampaignIDs) == 0 {
+		return nil, cusErr
 	}
 
 	return s.campaignService.FetchCampaignsByIDs(ctx, matchedCampaignIDs)

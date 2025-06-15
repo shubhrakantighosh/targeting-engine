@@ -3,11 +3,13 @@ package init
 import (
 	"context"
 	"fmt"
+	"github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 	config "github.com/spf13/viper"
 	"main/internal/model"
+	ocache "main/pkg/cache"
 	opostgres "main/pkg/db/postgres"
 	oprometheus "main/pkg/metric/prometheus"
 	oredis "main/pkg/redis"
@@ -19,15 +21,27 @@ func Initialize(ctx context.Context) {
 	initializeRedis(ctx)
 	initializeDB(ctx)
 	initializeMetrics()
+	initializeInMemoryCache(ctx)
 }
 
 func initializeRedis(ctx context.Context) {
 	r := redis.NewClient(&redis.Options{
-		Addr: config.GetString("redis.host"),
-		DB:   config.GetInt("redis.db"),
+		Addr:     config.GetString("redis.host"),
+		DB:       config.GetInt("redis.db"),
+		PoolSize: config.GetInt("redis.poolSize"),
 	})
 	fmt.Println("Initialized Redis Client")
 	oredis.SetClient(r)
+}
+
+func initializeInMemoryCache(ctx context.Context) {
+	defaultExp := config.GetDuration("cache.defaultExpiration")
+	cleanupInt := config.GetDuration("cache.cleanupInterval")
+
+	c := cache.New(defaultExp, cleanupInt)
+
+	fmt.Println("Initialized InMemory Cache")
+	ocache.SetClient(c)
 }
 
 func initializeDB(ctx context.Context) {

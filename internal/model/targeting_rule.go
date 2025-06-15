@@ -93,3 +93,19 @@ func (tr TargetingRules) HasIncludedRuleFor(dimensionType DimensionType, value s
 
 	return false
 }
+
+func (tr TargetingRules) GroupByDimensionAndValue() (grouped map[DimensionType]map[string]TargetingRules) {
+	if tr.IsEmpty() {
+		return
+	}
+
+	grouped = make(map[DimensionType]map[string]TargetingRules)
+	for _, rule := range tr {
+		if _, ok := grouped[rule.DimensionType]; !ok {
+			grouped[rule.DimensionType] = make(map[string]TargetingRules)
+		}
+		grouped[rule.DimensionType][rule.Value] = append(grouped[rule.DimensionType][rule.Value], rule)
+	}
+
+	return
+}

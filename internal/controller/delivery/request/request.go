@@ -50,20 +50,3 @@ func (q DeliveryRequestParams) DimensionTypeMapValue() (dimensionTypeMapValue se
 
 	return
 }
-
-func (q DeliveryRequestParams) ToBuildHierarchy() (dimensionType []model.DimensionType) {
-	dimensionType = make([]model.DimensionType, 0)
-	if len(q.Country) == 0 || len(q.State) == 0 {
-		return
-	}
-
-	if len(q.Country) > 0 && len(q.State) > 0 {
-		dimensionType = append(dimensionType, model.Country, model.State)
-	}
-
-	if len(q.State) > 0 && len(q.City) > 0 {
-		dimensionType = append(dimensionType, model.City)
-	}
-
-	return
-}

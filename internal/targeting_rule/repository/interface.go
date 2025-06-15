@@ -7,7 +7,7 @@ import (
 )
 
 type Interface interface {
-	GetDistinctCampaignIDsByFilter(
+	FetchCampaignIDsByFilter(
 		ctx context.Context,
 		filter map[string]interface{},
 		scopes ...func(db *gorm.DB) *gorm.DB,

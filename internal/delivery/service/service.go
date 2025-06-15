@@ -45,7 +45,7 @@ func (s *Service) GetMatchingCampaigns(
 		params.DimensionTypeMapValue(),
 	)
 	if cusErr.Exists() || len(matchedCampaignIDs) == 0 {
-		return nil, cusErr
+		return
 	}
 
 	return s.campaignService.FetchCampaignsByIDs(ctx, matchedCampaignIDs)

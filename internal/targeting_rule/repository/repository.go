@@ -31,7 +31,7 @@ func NewRepository(db *postgres.DbCluster) *Repository {
 	return repo
 }
 
-func (repo *Repository) GetDistinctCampaignIDsByFilter(
+func (repo *Repository) FetchCampaignIDsByFilter(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,

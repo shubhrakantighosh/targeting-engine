@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"gorm.io/gorm"
-	"main/constants"
+	"log"
 	"main/internal/model"
 	"main/internal/targeting_rule/repository"
 	"main/pkg/apperror"
 	oredis "main/pkg/redis"
-	"net/http"
+	"main/util"
 	"sync"
 )
 
@@ -49,18 +49,47 @@ func (s *Service) GetTargetingRules(
 	return s.repo.GetAll(ctx, filter, scopes...)
 }
 
-// only return
 func (s *Service) GetDistinctCampaignIDsByFilter(
 	ctx context.Context,
 	filter map[string]interface{},
 	scopes ...func(db *gorm.DB) *gorm.DB,
 ) (campaignIDs []uint64, cusErr apperror.Error) {
-	err := s.repo.Db.GetSlaveDB(ctx).Model(&model.TargetingRule{}).Where(filter).Scopes(scopes...).
-		Distinct(constants.CampaignID).Find(&campaignIDs).Error
-	if err != nil {
-		cusErr = apperror.New(err, http.StatusBadRequest)
+	return s.repo.FetchCampaignIDsByFilter(ctx, filter, scopes...)
+}
+
+func (s *Service) FilterMatchingCampaigns(
+	ctx context.Context,
+	clientRequest ClientRequest,
+) (matchedCampaignIDs []uint64, cusErr apperror.Error) {
+	logTag := util.LogPrefix(ctx, "FilterMatchingCampaigns")
+
+	campaignIDs, cusErr := s.GetCampaignIDsByApp(ctx, clientRequest[model.App])
+	if cusErr.Exists() {
+		log.Println(logTag, "Failed to get campaign IDs for app:", clientRequest[model.App], "-", cusErr)
 		return
 	}
 
+	if len(campaignIDs) == 0 {
+		log.Println(logTag, "No campaigns targeting app:", clientRequest[model.App])
+		return
+	}
+
+	targetingRules, cusErr := s.GetTargetingRulesByCampaigns(
+		ctx,
+		campaignIDs,
+	)
+	if cusErr.Exists() {
+		log.Println(logTag, "Failed to fetch targeting rules:", cusErr)
+		return
+	}
+
+	if targetingRules.IsEmpty() {
+		log.Println(logTag, "No targeting rules found for app:", clientRequest[model.App])
+		return
+	}
+
+	hierarchy := BuildHierarchy(clientRequest.ToBuildHierarchy()...)
+	filter := NewTargetingFilter(targetingRules, hierarchy)
+	matchedCampaignIDs = filter.GetMatchingCampaigns(campaignIDs, clientRequest)
 	return
 }

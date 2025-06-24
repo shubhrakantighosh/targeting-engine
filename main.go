@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/viper"
 	"main/config"
 	initilizer "main/init"
+	_ "main/middlewares"
 	"main/router"
+	"runtime"
 )
 
 func main() {
@@ -15,6 +17,7 @@ func main() {
 
 	config.InitConfig()
 	initilizer.Initialize(ctx)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// TODO seperated http func init
 	app := gin.New()

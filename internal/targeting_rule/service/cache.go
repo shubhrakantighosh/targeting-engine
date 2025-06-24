@@ -69,7 +69,6 @@ func (s *Service) populateCampaignIDsByApp(
 func (s *Service) GetTargetingRulesByCampaigns(
 	ctx context.Context,
 	campaignIDs []uint64,
-	country, os string,
 ) (rules model.TargetingRules, cusErr apperror.Error) {
 	logTag := util.LogPrefix(ctx, "GetTargetingRulesByCampaigns")
 
@@ -79,15 +78,9 @@ func (s *Service) GetTargetingRulesByCampaigns(
 	cacheMissCampaigns := make([]uint64, 0)
 
 	for _, id := range campaignIDs {
-		for _, dimension := range []model.DimensionType{model.Country, model.OS} {
-			value := country
-			if dimension.Is(model.OS) {
-				value = os
-			}
-			key := targetingRuleCacheKey(id, dimension, value)
-			cacheKeys = append(cacheKeys, &redis.KVOut{Key: key, Val: &model.TargetingRule{}})
-			campaignKeyMap[key] = id
-		}
+		key := targetingRuleCacheKey(id)
+		cacheKeys = append(cacheKeys, &redis.KVOut{Key: key, Val: &model.TargetingRules{}})
+		campaignKeyMap[key] = id
 	}
 
 	if err := s.redis.PipedMGet(ctx, cacheKeys); err != nil {
@@ -98,13 +91,13 @@ func (s *Service) GetTargetingRulesByCampaigns(
 	}
 
 	for _, kv := range cacheKeys {
-		val, ok := kv.Val.(*model.TargetingRule)
+		val, ok := kv.Val.(*model.TargetingRules)
 		if !kv.OK() || !ok {
 			cacheMissCampaigns = append(cacheMissCampaigns, campaignKeyMap[kv.Key])
 			continue
 		}
 
-		rules = append(rules, *val)
+		rules = append(rules, *val...)
 	}
 
 	cacheMissCampaigns = util.DeduplicateSlice(cacheMissCampaigns)
@@ -112,7 +105,7 @@ func (s *Service) GetTargetingRulesByCampaigns(
 		return
 	}
 
-	dbRules, cusErr := s.populateTargetingRulesByCampaigns(ctx, cacheMissCampaigns, country, os)
+	dbRules, cusErr := s.populateTargetingRulesByCampaigns(ctx, cacheMissCampaigns)
 	if cusErr.Exists() {
 		log.Println(logTag, "DB fetch error for missing targeting rules:", cusErr)
 
@@ -126,17 +119,15 @@ func (s *Service) GetTargetingRulesByCampaigns(
 func (s *Service) populateTargetingRulesByCampaigns(
 	ctx context.Context,
 	campaignIDs []uint64,
-	country, os string,
 ) (rules model.TargetingRules, cusErr apperror.Error) {
 	logTag := util.LogPrefix(ctx, "populateTargetingRulesByCampaigns")
 
 	rules = make(model.TargetingRules, 0)
 	filter := map[string]any{
-		constants.CampaignID:    campaignIDs,
-		constants.DimensionType: []string{constants.Country, constants.OS},
-		constants.Value:         []string{country, os},
-		constants.Include:       true,
+		constants.CampaignID: campaignIDs,
+		constants.Include:    true,
 	}
+
 	rules, cusErr = s.GetTargetingRules(ctx, filter)
 	if cusErr.Exists() {
 		log.Println(logTag, "DB fetch error:", cusErr, "Filter:", filter, "-", cusErr)
@@ -148,10 +139,11 @@ func (s *Service) populateTargetingRulesByCampaigns(
 		return rules, apperror.Error{}
 	}
 
-	keyMap := make([]redis.KVIn, 0, len(rules))
-	for _, rule := range rules {
-		key := targetingRuleCacheKey(rule.CampaignID, rule.DimensionType, rule.Value)
-		keyMap = append(keyMap, redis.KVIn{Key: key, Val: &rule})
+	campaignIDMap := rules.GroupByCampaignID()
+	keyMap := make([]redis.KVIn, 0, len(campaignIDMap))
+	for campaignID, v := range campaignIDMap {
+		key := targetingRuleCacheKey(campaignID)
+		keyMap = append(keyMap, redis.KVIn{Key: key, Val: &v})
 	}
 
 	if err := s.redis.PipedMSet(ctx, keyMap, constants.OneDay); err != nil {
@@ -165,6 +157,6 @@ func appCacheKey(appID string) string {
 	return fmt.Sprintf("targeting_rule_app_%s", appID)
 }
 
-func targetingRuleCacheKey(campaignID uint64, dimension model.DimensionType, value string) string {
-	return fmt.Sprintf("targeting_rule_%d_%s_%s", campaignID, dimension.String(), value)
+func targetingRuleCacheKey(campaignID uint64) string {
+	return fmt.Sprintf("targeting_rule_%d", campaignID)
 }

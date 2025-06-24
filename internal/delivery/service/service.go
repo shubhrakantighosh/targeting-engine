@@ -40,86 +40,15 @@ func (s *Service) GetMatchingCampaigns(
 	ctx context.Context,
 	params request.DeliveryRequestParams,
 ) (matchingCampaigns model.Campaigns, cusErr apperror.Error) {
-	logTag := util.LogPrefix(ctx, "GetMatchingCampaigns")
-
-	matchingCampaigns = make(model.Campaigns, 0)
-	campaignIDs, cusErr := s.targetingRuleService.GetCampaignIDsByApp(ctx, params.App)
-	if cusErr.Exists() {
-		log.Println(logTag, "Failed to get campaign IDs for app:", params.App, "-", cusErr)
-		return
-	}
-
-	if len(campaignIDs) == 0 {
-		log.Println(logTag, "No campaigns targeting app:", params.App)
-		return
-	}
-
-	targetingRules, cusErr := s.targetingRuleService.GetTargetingRulesByCampaigns(
+	matchedCampaignIDs, cusErr := s.targetingRuleService.FilterMatchingCampaigns(
 		ctx,
-		campaignIDs,
-		params.Country,
-		params.OS,
+		params.DimensionTypeMapValue(),
 	)
-	if cusErr.Exists() {
-		log.Println(logTag, "Failed to fetch targeting rules:", cusErr)
+	if cusErr.Exists() || len(matchedCampaignIDs) == 0 {
 		return
 	}
 
-	if targetingRules.IsEmpty() {
-		log.Println(logTag, "No targeting rules found for app:", params.App)
-		return
-	}
-
-	matchingCampaigns, cusErr = s.filterMatchingCampaigns(ctx, params, campaignIDs, targetingRules)
-	if cusErr.Exists() {
-		log.Println(logTag, "Rule matching failed:", cusErr)
-		return
-	}
-
-	return matchingCampaigns, apperror.Error{}
-}
-
-func (s *Service) filterMatchingCampaigns(
-	ctx context.Context,
-	params request.DeliveryRequestParams,
-	campaignIDs []uint64,
-	targetingRules model.TargetingRules,
-) (model.Campaigns, apperror.Error) {
-	matchingCampaignIDs := make([]uint64, 0)
-	groupedRules := targetingRules.GroupByCampaignID()
-
-	for _, campaignID := range campaignIDs {
-		rules, ok := groupedRules[campaignID]
-		if !ok || len(rules) < 2 {
-			continue
-		}
-
-		hasMatchingCountry := false
-		hasMatchingOS := false
-
-		for _, rule := range rules {
-			switch rule.DimensionType {
-			case model.Country:
-				if rule.Value == params.Country && rule.Include {
-					hasMatchingCountry = true
-				}
-			case model.OS:
-				if rule.Value == params.OS && rule.Include {
-					hasMatchingOS = true
-				}
-			}
-		}
-
-		if hasMatchingCountry && hasMatchingOS {
-			matchingCampaignIDs = append(matchingCampaignIDs, campaignID)
-		}
-	}
-
-	if len(matchingCampaignIDs) == 0 {
-		return model.Campaigns{}, apperror.Error{}
-	}
-
-	return s.campaignService.FetchCampaignsByIDs(ctx, matchingCampaignIDs)
+	return s.campaignService.FetchCampaignsByIDs(ctx, matchedCampaignIDs)
 }
 
 func (s *Service) IsAppTargeted(
